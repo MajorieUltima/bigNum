@@ -7,6 +7,7 @@ typedef struct t_bigNum{
     unsigned int size;
     // sign byte knows if it number is positive or negative and if digit amount is even or odd
     // bit 1 is sign, bit 2 is digit even or odd, if 1 it is odd, so we substract 1 from size
+    // bit 3 is for additional digit on adding operations
     unsigned char sign;
     unsigned char *str;
 }bigNum;
@@ -19,7 +20,6 @@ void contCheck(unsigned char *s, unsigned int size, unsigned int *c, bigNum a);
 void to_bN(unsigned char *s, unsigned int size, bigNum *a);
 
 bigNum add_bN(bigNum a, bigNum b);
-bigNum sub_bN(bigNum a, bigNum b);
 bigNum mult_bN(bigNum a, bigNum b);
 bigNum div_bN(bigNum a, bigNum b);
 
@@ -39,17 +39,28 @@ int main(int argc, char *argv[])
 	{
 	    buffer[i] = '\0';
 	}
+	getchar();
 	printf("Insert any number: ");
 	scanf("%64s", buffer);
 	to_bN(buffer, 64, &var2);
 	printDecimal(&var2);
 
-	add_bN(var, var2);
+	bigNum var3 = add_bN(var, var2);
+	printDecimal(&var3);
+
+	printf("a: %s, ", var.str);
+	showBits(var);
+	printf("b: %s, ", var2.str);
+	showBits(var2);
+	printf("c: %s, ", var3.str);
+	showBits(var3);
 
 	free(var.n);
 	free(var2.n);
+	free(var3.n);
 	free(var.str);
 	free(var2.str);
+	free(var3.str);
 	return 0;
 }
 
@@ -74,7 +85,8 @@ void showBits(bigNum a)
 
 void printDecimal(bigNum *a)
 {
-    unsigned int digits = (a->size << 1) - (a->sign >> 1) + (a->sign & 1), last = 0;
+    // the last term is contingency for cases like 999 999 + 999 999 where we need 1 extra digit
+    unsigned int digits = (a->size << 1) - ((a->sign >> 1) & 1) + ((a->sign >> 2) & 1), last = 0;
     unsigned char num[digits], spare[digits];
     for (unsigned int i = 0, j = a->size - 1; i < a->size && !last; i++, j--)
     {
@@ -92,24 +104,20 @@ void printDecimal(bigNum *a)
             break;
         }
     }
-    for (unsigned int i = a->sign & 1; i < digits; i++)
+
+    for (unsigned int i = 0; i < digits; i++)
     {
         num[i] = 0;
         spare[i] = 0;
-    }
-    if (a->sign & 1)
-    {
-        num[0] = '-';
-        spare[0] = '-';
     }
     spare[digits - 1] = 1;
     if (a->n[0] & 1)
     {
         num[digits - 1] = 1;
     }
-    for (unsigned int i = 1, d = a->sign & 1; i < last + 1; i++)
+    for (unsigned int i = 1, d = 0; i < last + 1; i++)
     {
-        for (unsigned int j = a->sign & 1; j < digits; j++)
+        for (unsigned int j = 0; j < digits; j++)
         {
             spare[j] = spare[j] << 1;
             if (spare[j] > 9)
@@ -118,54 +126,32 @@ void printDecimal(bigNum *a)
                 spare[j] %= 10;
             }
         }
+        /*printf("spare: ");
+        printDebug(spare, digits);*/
         // suma
-        for (unsigned int j = a->sign & 1; j < digits && a->n[i >> 3] & (1 << (i & 0x7)); j++)
+        for (unsigned int j = digits - 1, k = 0; k < digits && a->n[i >> 3] & (1 << (i & 0x7)); j--, k++)
         {
             num[j] += spare[j];
             if (num[j] > 9)
             {
                 num[j - 1] += num[j]/10;
-                num[j] %= 10;
+                num[j] = num[j] % 10;
             }
         }
+        /*printf("num: ");
+        printDebug(num, digits);*/
     }
-    // have to rewrite entirely, only works for 1 byte, better just create addition
-    /*for (unsigned int i, j = 0; j < a->size; j++)
-    {
-        i = digits - 1;
-        for (unsigned int k = 0; k < 8; k++)
-        {
-            if (num[i] && spare[i])
-            {
-                spare[i] = num[i];
-            }
-            if (a->n[j] & (1 << k))
-            {
-                num[i] += spare[i];
-                spare[i] = 0;
-            }
-            num[i] += (a->n[j] & (1 << k)) % 10;
-            num[i - 1] += (a->n[j] & (1 << k))/10;
-            for (unsigned int p = i; num[p] > 9; p--)
-            {
-                num[p - 1] += num[p]/10;
-                num[p] %= 10;
-            }
-        }
-    }*/
-    a->str = malloc(digits + 1);
+    a->str = malloc(digits + 1 + (a->sign & 1));
     a->str[digits] = '\0';
     if (a->sign & 1)
     {
-        putchar('-');
-        a->str[0] = '0';
+        a->str[0] = '-';
     }
     for (unsigned int i = a->sign & 1; i < digits; i++)
     {
         a->str[i] = num[i] + 48;
-        printf("%d", num[i]);
     }
-    putchar('\n');
+    printf("%s\n", a->str);
 }
 
 void printDebug(unsigned char* s, unsigned int size)
@@ -262,9 +248,10 @@ void to_bN(unsigned char *ori, unsigned int size, bigNum *a)
         a->n[offset >> 3] |= 1 << (offset & 0x7);
         s[size - 1] = 1;
         // multiplicacion
+        //printf("offset: %d\n", offset);
         for (unsigned int i = 0; i < offset; i++)
         {
-            for (unsigned int j = 0; j < size; j++)
+            for (unsigned int j = a->sign & 1; j < size; j++)
             {
                 s[j] = s[j] << 1;
                 if (s[j] > 9)
@@ -273,14 +260,20 @@ void to_bN(unsigned char *ori, unsigned int size, bigNum *a)
                     s[j] = s[j] % 10;
                 }
             }
+            //printDebug(s, size);
         }
         // resta
-        for (unsigned int i = size - 1, j = a->sign & 1; j < size; --i, j++)
+        /*printf("resta\nd: ");
+        printDebug(d, size);
+        printf("s: ");
+        printDebug(s, size);*/
+        for (unsigned int i = size - 1, j = a->sign & 1; j < size; i--, j++)
         {
             if (d[i] < s[i])
             {
                 d[i] += 10 - s[i];
-                for (unsigned int k = i - 1; j < size; k--, j++)
+                // what the fuck did i write
+                for (unsigned int k = i - 1, o = j; o < size; k--, o++)
                 {
                     if (d[k])
                     {
@@ -289,16 +282,15 @@ void to_bN(unsigned char *ori, unsigned int size, bigNum *a)
                         {
                             d[p] = 9;
                         }
-                        d[i - 1]++;
                         break;
                     }
                 }
-                d[i - 1]--;
             }
             else
             {
                 d[i] -= s[i];
             }
+            //printDebug(d, size);
         }
         contCheck(d, size, &c, *a);
         for (unsigned int i = 0; i < size; i++)
@@ -307,7 +299,6 @@ void to_bN(unsigned char *ori, unsigned int size, bigNum *a)
         }
     }
     a->n[0] |= s[size - 1];
-    showBits(*a);
     /* Para pasar el numero a binario, deberia empezar por el numero completo y dividirlo entre 2 hasta llegar a 1, dependiendo de cuantas veces tome, el numero tendra su primer bit esa cantidad de espacios a la izquierda, y si la primer division que ocurre tiene un decimal, se le suma 1 a la cantidad de bits.
     o sea, si el primer digito es impar, sumare 1 al final y despues redondeare al numero mas chico, si no, solo seguire dividiendo entre 2, pero ya mañana.
     */
@@ -322,49 +313,187 @@ void to_bN(unsigned char *ori, unsigned int size, bigNum *a)
 
 bigNum add_bN(bigNum a, bigNum b)
 {
-    unsigned int digits = (a.size << 1) - (a.sign >> 1) + (a.sign & 1),
-                    digits2 = (b.size << 1) - (b.sign >> 1) + (b.sign & 1);
-    bigNum c;
-    // finish later so it returns bigNum c for better thingy
-    for (unsigned int i = 0; i < digits; i++)
+    unsigned int biggest = a.size, lowest = b.size;
+    bigNum c, *d = &a, *e = &b;
+    // i'll handle negatives once i have to
+    c.size = biggest;
+    c.sign = a.sign;
+    if (lowest > biggest)
     {
-        a.str[i] -= 48;
+        c.sign = b.sign;
+        c.size = lowest;
+        d = &b;
+        e = &a;
+        lowest ^= biggest;
+        biggest ^= lowest;
+        lowest ^= biggest;
     }
-    for (unsigned int i = 0; i < digits2; i++)
+    c.sign |= 0x4;
+    c.n = calloc(c.size, 1);
+    /*printf("a.sign: %d\n", a.sign & 1);
+    printf("b.sign: %d\n", b.sign & 1);
+    printf("what the fuck: %d, %d\n", a.sign & 1 != b.sign & 1, (a.sign & 1) != (b.sign & 1));*/
+    // subtraction TT
+    if ((a.sign & 1) != (b.sign & 1))
     {
-        b.str[i] -= 48;
-    }
-    if (digits < digits2)
-    {
-        digits = digits2;
-        c = a;
-        a = b;
-        b = c;
-    }
-    for (unsigned int j = a.sign & 1; j < digits; j++)
-    {
-        a.str[j] += b.str[j];
-        if (a.str[j] > 9)
+        // check which is bigger
+        if (lowest < biggest)
         {
-            a.str[j - 1] += a.str[j]/10;
-            a.str[j] %= 10;
+            for (unsigned int i = 0; i < c.size; i++)
+            {
+                c.n[i] = d->n[i];
+            }
+            // what the fuck
+            // d = &c actually creates a copy, for some reason, *d = c doesn't
+            *d = c;
+            for (unsigned int i = e->size - 1, q = e->size; q > 0; i--, q--)
+            {
+                for (unsigned int j = 0; j < 8; j++)
+                {
+                    if (((d->n[i] >> j) & 1) < ((e->n[i] >> j) & 1))
+                    {
+                        d->n[i] |= 1 << j;
+                        for (unsigned int k = j + 1, p = i; p < d->size; k++)
+                        {
+                            if (k & 8)
+                            {
+                                p++;
+                                k = 0;
+                            }
+                            //printf("where did we go wrong? k: %d, p: %d\n", k, p);
+                            if ((d->n[p] >> k) & 1)
+                            {
+                                d->n[p] ^= 1 << k;
+                                break;
+                            }
+                            d->n[p] |= 1 << k;
+                        }
+                    }
+                    else
+                    {
+                        d->n[i] -= ((e->n[i] >> j) & 1) << j;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // find out which number is bigger, then apply a subtraction algorithm like this to avoid weird things
+            for (unsigned int i = biggest - 1, j = 0; j < biggest; i--, j++)
+            {
+                if (b.n[i] > a.n[i])
+                {
+                    /*printf("biggest: %d, %d\n", biggest, i);
+                    printf("r/happened\n");*/
+                    e = &a;
+                    d = &b;
+                    //printf("value pre loop: %d\n", (b.n[i] > a.n[i]));
+                    for (unsigned int i = 0; i < c.size; i++)
+                    {
+                        // this overwrites a for some reason
+                        c.n[i] = d->n[i];
+                    }
+                    //printf("value post loop: %d\n", (b.n[i] > a.n[i]));
+                    *d = c;
+                    /*printf("value pre e: %d\n", (b.n[i] > a.n[i]));
+                    printf("value post e: %d\n", (b.n[i] > a.n[i]));
+                    printf("d: ");
+                    showBits(*d);
+                    printf("e: ");
+                    showBits(*e);
+                    printf("a: ");
+                    showBits(a);
+                    printf("b: ");
+                    showBits(b);*/
+                    break;
+                }
+                else if (a.n[i] > b.n[i])
+                {
+                    e = &b;
+                    d = &a;
+                    for (unsigned int i = 0; i < c.size; i++)
+                    {
+                        c.n[i] = d->n[i];
+                    }
+                    *d = c;
+                    break;
+                }
+            }
+            for (unsigned int i = e->size - 1, q = e->size; q > 0; i--, q--)
+            {
+                for (unsigned int j = 0; j < 8; j++)
+                {
+                    if (((d->n[i] >> j) & 1) < ((e->n[i] >> j) & 1))
+                    {
+                        d->n[i] |= 1 << j;
+                        for (unsigned int k = j + 1, p = i; p < d->size; k++)
+                        {
+                            if (k & 8)
+                            {
+                                p++;
+                                k = 0;
+                            }
+                            //printf("where did we go wrong? k: %d, p: %d\n", k, p);
+                            if ((d->n[p] >> k) & 1)
+                            {
+                                d->n[p] ^= 1 << k;
+                                //printf("here: %d\n", d->n[p]);
+                                break;
+                            }
+                            d->n[p] |= 1 << k;
+                        }
+                    }
+                    else
+                    {
+                        d->n[i] -= ((e->n[i] >> j) & 1) << j;
+                    }
+                }
+            }
         }
     }
-    for (unsigned int i = 0; i < digits; i++)
+    else
     {
-        a.str[i] += 48;
+    // addition is the best lol, i might even be able to add per char and not bit
+    for (unsigned int i = 0; i < lowest; i++)
+    {
+        if (a.n[i] + b.n[i] > 0xff)
+        {
+            c.n[i] += a.n[i] + b.n[i] - 0x100;
+            c.n[i + 1]++;
+        }
+        else
+        {
+            if (c.n[i] + a.n[i] + b.n[i] > 0xff)
+            {
+                c.n[i] += a.n[i] + b.n[i] - 0x100;
+                c.n[i + 1]++;
+            }
+            else
+            {
+                c.n[i] += a.n[i] + b.n[i];
+            }
+        }
     }
-    printf("res: %s\n", a.str);
-}
-
-bigNum sub_bN(bigNum a, bigNum b)
-{
-    unsigned int digits = (a.size << 1) - (a.sign >> 1) + (a.sign & 1);
+    for (unsigned int i = lowest; i < biggest; i++)
+    {
+        if (c.n[i] + d->n[i] > 0xff)
+        {
+            c.n[i] += d->n[i] - 0x100;
+            c.n[i + 1]++;
+        }
+        else
+        {
+            c.n[i] += d->n[i];
+        }
+    }
+    }
+    return c;
 }
 
 bigNum mult_bN(bigNum a, bigNum b)
 {
-    unsigned int digits = (a.size << 1) - (a.sign >> 1) + (a.sign & 1);
+    // TODO: this, literally
+    unsigned int digits = 0;
 }
 
 bigNum div_bN(bigNum a, bigNum b)
